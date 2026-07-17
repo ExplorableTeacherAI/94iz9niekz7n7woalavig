@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Building a Tesseract: Dimension by Dimension</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      line-height: 1.7;
+      color: #1a1a2e;
+      background: #ffffff;
+      padding: 2rem;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 2.2rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      color: #1a1a2e;
+    }
+
+    .subtitle {
+      font-size: 1.1rem;
+      color: #64748b;
+      margin-bottom: 2.5rem;
+    }
+
+    section {
+      margin-bottom: 3.5rem;
+      padding-bottom: 2rem;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    section:last-child {
+      border-bottom: none;
+    }
+
+    h2 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 1rem;
+      color: #1a1a2e;
+    }
+
+    p {
+      margin-bottom: 1rem;
+      color: #334155;
+    }
+
+    .visualization {
+      background: #f8fafc;
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin: 1.5rem 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    svg {
+      display: block;
+      max-width: 100%;
+      touch-action: none;
+    }
+
+    .handle {
+      cursor: grab;
+      transition: transform 0.1s;
+    }
+
+    .handle:hover {
+      transform: scale(1.1);
+    }
+
+    .handle:active {
+      cursor: grabbing;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-top: 1rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .slider-container {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    input[type="range"] {
+      width: 200px;
+      accent-color: #0d9488;
+    }
+
+    .readout {
+      font-family: 'SF Mono', Monaco, 'Consolas', monospace;
+      font-size: 0.9rem;
+      color: #0d9488;
+      background: #f0fdfa;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      min-width: 80px;
+      text-align: center;
+    }
+
+    .instruction {
+      font-style: italic;
+      color: #64748b;
+      font-size: 0.95rem;
+      margin-top: 0.5rem;
+    }
+
+    .accent {
+      color: #0d9488;
+      font-weight: 600;
+    }
+
+    .dual-view {
+      display: flex;
+      gap: 2rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      width: 100%;
+    }
+
+    .view-panel {
+      flex: 1;
+      min-width: 280px;
+      text-align: center;
+    }
+
+    .view-label {
+      font-size: 0.85rem;
+      color: #64748b;
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+    }
+
+    .question {
+      background: #fffbeb;
+      border-left: 3px solid #f59e0b;
+      padding: 1rem 1.25rem;
+      margin: 1.5rem 0;
+      border-radius: 0 8px 8px 0;
+    }
+
+    .question input {
+      width: 80px;
+      padding: 0.25rem 0.5rem;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      font-size: 1rem;
+      margin: 0 0.25rem;
+    }
+
+    .feedback {
+      margin-left: 0.5rem;
+      font-weight: 500;
+    }
+
+    .feedback.correct {
+      color: #059669;
+    }
+
+    .feedback.hint {
+      color: #b45309;
+    }
+
+    button {
+      background: #0d9488;
+      color: white;
+      border: none;
+      padding: 0.5rem 1.25rem;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    button:hover {
+      background: #0f766e;
+    }
+
+    button:disabled {
+      background: #94a3b8;
+      cursor: not-allowed;
+    }
+
+    .pattern-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+
+    .pattern-cell {
+      text-align: center;
+      padding: 1rem;
+      background: #f8fafc;
+      border-radius: 8px;
+    }
+
+    .pattern-cell .dim {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #0d9488;
+    }
+
+    .pattern-cell .shape {
+      font-size: 0.85rem;
+      color: #64748b;
+      margin-top: 0.25rem;
+    }
+
+    .pattern-cell .verts {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #1a1a2e;
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Building a Tesseract: Dimension by Dimension</h1>
+  <p class="subtitle">Discover how each dimension builds on the last — from a point all the way to the fourth dimension.</p>
+
+  <!-- Section 1: Point to Line -->
+  <section id="section-point-to-line">
+    <h2>From Point to Line (0D → 1D)</h2>
+    <p>Let's start with the simplest thing: a single <span class="accent">point</span>. A point has no size — it's just a location. It exists in zero dimensions.</p>
+    <p>But what happens when we <em>move</em> that point? Drag the <span class="accent">teal point</span> to the right and watch what gets created.</p>
+
+    <div class="visualization">
+      <svg id="svg1" width="500" height="120" viewBox="0 0 500 120">
+        <line id="line1" x1="100" y1="60" x2="100" y2="60" stroke="#0d9488" stroke-width="4" stroke-linecap="round"/>
+        <circle id="startPoint1" cx="100" cy="60" r="8" fill="#94a3b8"/>
+        <circle id="handle1" cx="100" cy="60" r="12" fill="#0d9488" class="handle"/>
+        <text id="lengthLabel1" x="100" y="100" text-anchor="middle" font-size="14" fill="#64748b">Length: 0</text>
+      </svg>
+      <p class="instruction">Drag the teal point horizontally to create a line segment.</p>
+    </div>
+
+    <p>Amazing! The <span class="accent">line segment</span> you created is the <em>path</em> the point traced as it moved. A line has one dimension — length. Every point along that line is a position the moving point occupied.</p>
+    <p><strong>The pattern begins:</strong> Moving a 0D object (point) through space creates a 1D object (line).</p>
+
+    <div class="question">
+      <strong>Check your understanding:</strong> If you drag the point 7 units to the right, how long is the line segment?
+      <input type="number" id="q1" placeholder="?"> units
+      <span id="q1-fb" class="feedback"></span>
+    </div>
+  </section>
+
+  <!-- Section 2: Line to Square -->
+  <section id="section-line-to-square">
+    <h2>From Line to Square (1D → 2D)</h2>
+    <p>Now we have a line segment. What if we apply the same idea — but move the <em>entire line</em> in a new direction?</p>
+    <p>Use the <span class="accent">growth slider</span> to extend the line perpendicular to itself. Watch the line "grow" a second dimension.</p>
+
+    <div class="visualization">
+      <svg id="svg2" width="400" height="300" viewBox="0 0 400 300">
+        <rect id="square2" x="100" y="200" width="200" height="0" fill="#ccfbf1" stroke="#0d9488" stroke-width="2"/>
+        <line id="origLine2" x1="100" y1="200" x2="300" y2="200" stroke="#94a3b8" stroke-width="3" stroke-dasharray="5,5"/>
+        <line id="topLine2" x1="100" y1="200" x2="300" y2="200" stroke="#0d9488" stroke-width="3"/>
+        <text id="widthLabel2" x="320" y="200" font-size="13" fill="#64748b">Width: 0</text>
+        <text id="areaLabel2" x="200" y="200" text-anchor="middle" font-size="14" fill="#0f766e" font-weight="600"></text>
+      </svg>
+      <div class="controls">
+        <span>Growth:</span>
+        <input type="range" id="growthSlider2" min="0" max="150" value="0">
+        <span class="readout" id="growthReadout2">0 units</span>
+      </div>
+      <p class="instruction">Drag the slider to grow the line into a square. Try moving backward too!</p>
+    </div>
+
+    <p>The line didn't just stretch — every point on the line simultaneously moved perpendicular to itself, sweeping out a <span class="accent">square</span>. The original line (shown dashed) became one edge, and its journey created the area.</p>
+    <p><strong>The pattern continues:</strong> Moving a 1D object (line) perpendicular to itself creates a 2D object (square).</p>
+
+    <div class="question">
+      <strong>Check your understanding:</strong> A line segment of length 5, grown 5 units perpendicular, creates a square. What's its area?
+      <input type="number" id="q2" placeholder="?"> square units
+      <span id="q2-fb" class="feedback"></span>
+    </div>
+  </section>
+
+  <!-- Section 3: Square to Cube -->
+  <section id="section-square-to-cube">
+    <h2>From Square to Cube (2D → 3D)</h2>
+    <p>We have a square. Now let's apply the same pattern again: move the entire square perpendicular to itself — into the <em>third</em> dimension.</p>
+    <p>Click and drag the <span class="accent">teal arrow</span> to pull the square into 3D space.</p>
+
+    <div class="visualization">
+      <svg id="svg3" width="400" height="350" viewBox="0 0 400 350">
+        <!-- Back face (will be drawn behind) -->
+        <polygon id="backFace3" points="150,50 300,50 300,200 150,200" fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.5" opacity="0"/>
+        <!-- Connecting edges -->
+        <line id="edge3a" x1="100" y1="100" x2="100" y2="100" stroke="#64748b" stroke-width="1.5" opacity="0"/>
+        <line id="edge3b" x1="250" y1="100" x2="250" y2="100" stroke="#64748b" stroke-width="1.5" opacity="0"/>
+        <line id="edge3c" x1="250" y1="250" x2="250" y2="250" stroke="#64748b" stroke-width="1.5" opacity="0"/>
+        <line id="edge3d" x1="100" y1="250" x2="100" y2="250" stroke="#64748b" stroke-width="1.5" opacity="0"/>
+        <!-- Front face (original square) -->
+        <polygon id="frontFace3" points="100,100 250,100 250,250 100,250" fill="#ccfbf1" stroke="#0d9488" stroke-width="2"/>
+        <!-- Arrow handle -->
+        <line id="arrowLine3" x1="175" y1="175" x2="175" y2="175" stroke="#0d9488" stroke-width="3"/>
+        <polygon id="arrowHead3" points="175,175 175,175 175,175" fill="#0d9488"/>
+        <circle id="arrowHandle3" cx="175" cy="175" r="14" fill="#0d9488" class="handle"/>
+        <text x="175" y="290" text-anchor="middle" font-size="12" fill="#64748b">Original square</text>
+        <text id="depthLabel3" x="320" y="150" font-size="13" fill="#64748b">Depth: 0</text>
+      </svg>
+      <p class="instruction">Drag the teal circle diagonally up-left to pull the square into 3D.</p>
+    </div>
+
+    <p>The square became the <span class="accent">front face</span> of a cube. Its copy (shown in gray) became the back face. The four corners of the original square traced out the four connecting edges.</p>
+    <p><strong>The pattern holds:</strong> Moving a 2D object (square) perpendicular to itself creates a 3D object (cube).</p>
+
+    <div class="question">
+      <strong>Check your understanding:</strong> A square has 4 vertices. When we copy it and connect corresponding vertices, how many vertices does the cube have?
+      <input type="number" id="q3" placeholder="?"> vertices
+      <span id="q3-fb" class="feedback"></span>
+    </div>
+  </section>
+
+  <!-- Section 4: Cube to Tesseract -->
+  <section id="section-cube-to-tesseract">
+    <h2>From Cube to Tesseract (3D → 4D)</h2>
+    <p>Here's where it gets mind-bending. We can't <em>see</em> a fourth perpendicular direction — but mathematically, we can follow the exact same pattern.</p>
+    <p>To understand what a tesseract (4D hypercube) is, let's compare how we slice through dimensions. Use the <span class="accent">slice slider</span> to cut through both shapes.</p>
+
+    <div class="visualization">
+      <div class="dual-view">
+        <div class="view-panel">
+          <div class="view-label">Slicing a 3D Cube</div>
+          <svg id="svg4a" width="200" height="200" viewBox="0 0 200 200">
+            <!-- Cube wireframe -->
+            <polygon points="40,60 120,60 120,140 40,140" fill="none" stroke="#94a3b8" stroke-width="1.5"/>
+            <polygon points="80,30 160,30 160,110 80,110" fill="none" stroke="#94a3b8" stroke-width="1.5"/>
+            <line x1="40" y1="60" x2="80" y2="30" stroke="#94a3b8" stroke-width="1.5"/>
+            <line x1="120" y1="60" x2="160" y2="30" stroke="#94a3b8" stroke-width="1.5"/>
+            <line x1="120" y1="140" x2="160" y2="110" stroke="#94a3b8" stroke-width="1.5"/>
+            <line x1="40" y1="140" x2="80" y2="110" stroke="#94a3b8" stroke-width="1.5"/>
+            <!-- Slice plane -->
+            <polygon id="slicePlane4a" points="40,100 120,100 160,70 80,70" fill="#0d948833" stroke="#0d9488" stroke-width="2"/>
+            <text id="sliceLabel4a" x="100" y="180" text-anchor="middle" font-size="12" fill="#0d9488">Cross-section: Square</text>
+          </svg>
+        </div>
+        <div class="view-panel">
+          <div class="view-label">Slicing a 4D Tesseract</div>
+          <svg id="svg4b" width="200" height="200" viewBox="0 0 200 200">
+            <!-- Tesseract projection (inner and outer cube connected) -->
+            <!-- Outer cube -->
+            <polygon points="30,50 130,50 130,150 30,150" fill="none" stroke="#94a3b8" stroke-width="1"/>
+            <polygon points="70,20 170,20 170,120 70,120" fill="none" stroke="#94a3b8" stroke-width="1"/>
+            <line x1="30" y1="50" x2="70" y2="20" stroke="#94a3b8" stroke-width="1"/>
+            <line x1="130" y1="50" x2="170" y2="20" stroke="#94a3b8" stroke-width="1"/>
+            <line x1="130" y1="150" x2="170" y2="120" stroke="#94a3b8" stroke-width="1"/>
+            <line x1="30" y1="150" x2="70" y2="120" stroke="#94a3b8" stroke-width="1"/>
+            <!-- Inner cube -->
+            <polygon points="60,70 110,70 110,120 60,120" fill="none" stroke="#64748b" stroke-width="1.5"/>
+            <polygon points="75,55 125,55 125,105 75,105" fill="none" stroke="#64748b" stroke-width="1.5"/>
+            <line x1="60" y1="70" x2="75" y2="55" stroke="#64748b" stroke-width="1.5"/>
+            <line x1="110" y1="70" x2="125" y2="55" stroke="#64748b" stroke-width="1.5"/>
+            <line x1="110" y1="120" x2="125" y2="105" stroke="#64748b" stroke-width="1.5"/>
+            <line x1="60" y1="120" x2="75" y2="105" stroke="#64748b" stroke-width="1.5"/>
+            <!-- Connect inner to outer -->
+            <line x1="30" y1="50" x2="60" y2="70" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,3"/>
+            <line x1="130" y1="50" x2="110" y2="70" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,3"/>
+            <line x1="130" y1="150" x2="110" y2="120" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,3"/>
+            <line x1="30" y1="150" x2="60" y2="120" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,3"/>
+            <line x1="70" y1="20" x2="75" y2="55" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,3"/>
+            <line x1="170" y1="20" x2="125" y2="55" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,3"/>
+            <line x1="170" y1="120" x2="125" y2="105" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,3"/>
+            <line x1="70" y1="120" x2="75" y2="105" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,3"/>
+            <!-- Slice visualization - a 3D cube cross-section -->
+            <polygon id="sliceCube4b" points="60,70 110,70 110,120 60,120" fill="#0d948844" stroke="#0d9488" stroke-width="2"/>
+            <text id="sliceLabel4b" x="100" y="180" text-anchor="middle" font-size="12" fill="#0d9488">Cross-section: Cube</text>
+          </svg>
+        </div>
+      </div>
+      <div class="controls">
+        <span>Slice position:</span>
+        <input type="range" id="sliceSlider4" min="0" max="100" value="50">
+        <span class="readout" id="sliceReadout4">50%</span>
+      </div>
+      <p class="instruction">Move the slice through each shape. Notice: cube slices are squares, tesseract slices are cubes!</p>
+    </div>
+
+    <p>Just as a cube is made of infinitely many square slices stacked in the third dimension, a <span class="accent">tesseract</span> is made of infinitely many <em>cube</em> slices stacked in the fourth dimension.</p>
+    <p><strong>The pattern completes:</strong> Moving a 3D object (cube) perpendicular to itself (into 4D) creates a 4D object (tesseract).</p>
+
+    <div class="question">
+      <strong>Check your understanding:</strong> A cube has 8 vertices. Following the doubling pattern, how many vertices does a tesseract have?
+      <input type="number" id="q4" placeholder="?"> vertices
+      <span id="q4-fb" class="feedback"></span>
+    </div>
+  </section>
+
+  <!-- Section 5: Seeing the Pattern -->
+  <section id="section-the-pattern">
+    <h2>Seeing the Pattern</h2>
+    <p>Let's step back and see the beautiful pattern you've discovered. For each shape below, draw an arrow in the direction you think is "perpendicular to itself" — the direction you'd move it to create the next dimension.</p>
+
+    <div class="visualization">
+      <svg id="svg5" width="600" height="200" viewBox="0 0 600 200">
+        <!-- Point -->
+        <g id="shape0">
+          <circle cx="75" cy="100" r="6" fill="#64748b"/>
+          <text x="75" y="160" text-anchor="middle" font-size="12" fill="#64748b">0D: Point</text>
+          <line id="arrow0" x1="75" y1="100" x2="75" y2="100" stroke="#0d9488" stroke-width="3" stroke-linecap="round" opacity="0"/>
+          <polygon id="arrowHead0" points="75,100 75,100 75,100" fill="#0d9488" opacity="0"/>
+          <circle id="arrowHandle0" cx="75" cy="100" r="10" fill="#0d9488" class="handle" opacity="0.3"/>
+        </g>
+        <!-- Line -->
+        <g id="shape1">
+          <line x1="160" y1="100" x2="215" y2="100" stroke="#64748b" stroke-width="3" stroke-linecap="round"/>
+          <text x="187" y="160" text-anchor="middle" font-size="12" fill="#64748b">1D: Line</text>
+          <line id="arrow1" x1="187" y1="100" x2="187" y2="100" stroke="#0d9488" stroke-width="3" stroke-linecap="round" opacity="0"/>
+          <polygon id="arrowHead1" points="187,100 187,100 187,100" fill="#0d9488" opacity="0"/>
+          <circle id="arrowHandle1" cx="187" cy="100" r="10" fill="#0d9488" class="handle" opacity="0.3"/>
+        </g>
+        <!-- Square -->
+        <g id="shape2">
+          <rect x="275" y="75" width="50" height="50" fill="none" stroke="#64748b" stroke-width="2"/>
+          <text x="300" y="160" text-anchor="middle" font-size="12" fill="#64748b">2D: Square</text>
+          <line id="arrow2" x1="300" y1="100" x2="300" y2="100" stroke="#0d9488" stroke-width="3" stroke-linecap="round" opacity="0"/>
+          <polygon id="arrowHead2" points="300,100 300,100 300,100" fill="#0d9488" opacity="0"/>
+          <circle id="arrowHandle2" cx="300" cy="100" r="10" fill="#0d9488" class="handle" opacity="0.3"/>
+        </g>
+        <!-- Cube -->
+        <g id="shape3">
+          <polygon points="390,85 440,85 440,135 390,135" fill="none" stroke="#64748b" stroke-width="2"/>
+          <polygon points="405,70 455,70 455,120 405,120" fill="none" stroke="#64748b" stroke-width="1.5"/>
+          <line x1="390" y1="85" x2="405" y2="70" stroke="#64748b" stroke-width="1.5"/>
+          <line x1="440" y1="85" x2="455" y2="70" stroke="#64748b" stroke-width="1.5"/>
+          <line x1="440" y1="135" x2="455" y2="120" stroke="#64748b" stroke-width="1.5"/>
+          <line x1="390" y1="135" x2="405" y2="120" stroke="#64748b" stroke-width="1.5"/>
+          <text x="422" y="160" text-anchor="middle" font-size="12" fill="#64748b">3D: Cube</text>
+          <line id="arrow3" x1="422" y1="102" x2="422" y2="102" stroke="#0d9488" stroke-width="3" stroke-linecap="round" opacity="0"/>
+          <polygon id="arrowHead3" points="422,102 422,102 422,102" fill="#0d9488" opacity="0"/>
+          <circle id="arrowHandle3" cx="422" cy="102" r="10" fill="#0d9488" class="handle" opacity="0.3"/>
+        </g>
+        <!-- Result indicator -->
+        <g id="resultArea">
+          <text x="530" y="90" text-anchor="middle" font-size="12" fill="#64748b">Result:</text>
+          <text id="resultText" x="530" y="115" text-anchor="middle" font-size="14" fill="#0d9488" font-weight="600">Draw arrows!</text>
+        </g>
+      </svg>
+      <div class="controls">
+        <button id="sweepBtn" disabled>Sweep All Shapes</button>
+        <button id="resetBtn5">Reset</button>
+      </div>
+      <p class="instruction">Drag from each shape's center to draw your predicted perpendicular direction, then press Sweep.</p>
+    </div>
+
+    <p>The universal rule: <strong>To go up one dimension, take your shape and move it perpendicular to all its existing dimensions, then connect corresponding points.</strong></p>
+
+    <div class="pattern-grid">
+      <div class="pattern-cell">
+        <div class="dim">0D → 1D</div>
+        <div class="shape">Point → Line</div>
+        <div class="verts">1 → 2</div>
+      </div>
+      <div class="pattern-cell">
+        <div class="dim">1D → 2D</div>
+        <div class="shape">Line → Square</div>
+        <div class="verts">2 → 4</div>
+      </div>
+      <div class="pattern-cell">
+        <div class="dim">2D → 3D</div>
+        <div class="shape">Square → Cube</div>
+        <div class="verts">4 → 8</div>
+      </div>
+      <div class="pattern-cell">
+        <div class="dim">3D → 4D</div>
+        <div class="shape">Cube → Tesseract</div>
+        <div class="verts">8 → 16</div>
+      </div>
+    </div>
+
+    <p>Each dimension doubles the vertex count — because you're making a copy and connecting every vertex to its twin. You've just understood a tesseract not as something mystical, but as the natural next step in a pattern that starts with a simple point.</p>
+  </section>
+
+  <script>
+    // ========== Section 1: Point to Line ==========
+    (function() {
+      const svg = document.getElementById('svg1');
+      const handle = document.getElementById('handle1');
+      const line = document.getElementById('line1');
+      const startPoint = document.getElementById('startPoint1');
+      const lengthLabel = document.getElementById('lengthLabel1');
+
+      const startX = 100;
+      const y = 60;
+      let currentX = startX;
+
+      function toSvg(evt) {
+        const pt = new DOMPoint(evt.clientX, evt.clientY);
+        return pt.matrixTransform(svg.getScreenCTM().inverse());
+      }
+
+      function clamp(val, min, max) {
+        return Math.max(min, Math.min(max, val));
+      }
+
+      function update(x) {
+        currentX = clamp(x, startX, 400);
+        handle.setAttribute('cx', currentX);
+        line.setAttribute('x2', currentX);
+        const len = Math.round(currentX - startX);
+        lengthLabel.textContent = `Length: ${len}`;
+        lengthLabel.setAttribute('x', startX + (currentX - startX) / 2);
+      }
+
+      handle.addEventListener('pointerdown', e => {
+        handle.setPointerCapture(e.pointerId);
+      });
+
+      handle.addEventListener('pointermove', e => {
+        if (!handle.hasPointerCapture(e.pointerId)) return;
+        const p = toSvg(e);
+        update(p.x);
+      });
+
+      // Question 1
+      document.getElementById('q1').addEventListener('change', e => {
+        const v = parseFloat(e.target.value);
+        const fb = document.getElementById('q1-fb');
+        if (v === 7) {
+          fb.textContent = '✓ Correct! The length equals the distance dragged.';
+          fb.className = 'feedback correct';
+        } else {
+          fb.textContent = 'Try again — the length is exactly how far the point moved.';
+          fb.className = 'feedback hint';
+        }
+      });
+    })();
+
+    // ========== Section 2: Line to Square ==========
+    (function() {
+      const slider = document.getElementById('growthSlider2');
+      const readout = document.getElementById('growthReadout2');
+      const square = document.getElementById('square2');
+      const topLine = document.getElementById('topLine2');
+      const widthLabel = document.getElementById('widthLabel2');
+      const areaLabel = document.getElementById('areaLabel2');
+
+      const baseY = 200;
+      const lineLength = 200;
+
+      function update() {
+        const growth = parseInt(slider.value);
+        readout.textContent = `${growth} units`;
+
+        square.setAttribute('y', baseY - growth);
+        square.setAttribute('height', growth);
+        topLine.setAttribute('y1', baseY - growth);
+        topLine.setAttribute('y2', baseY - growth);
+
+        widthLabel.textContent = `Width: ${growth}`;
+        widthLabel.setAttribute('y', baseY - growth / 2);
+
+        if (growth > 0) {
+          const area = (lineLength / 10) * (growth / 10); // Scale for display
+          areaLabel.textContent = growth === 150 ? `Area = ${lineLength} × ${growth}` : '';
+          areaLabel.setAttribute('y', baseY - growth / 2);
+        } else {
+          areaLabel.textContent = '';
+        }
+      }
+
+      slider.addEventListener('input', update);
+
+      // Question 2
+      document.getElementById('q2').addEventListener('change', e => {
+        const v = parseFloat(e.target.value);
+        const fb = document.getElementById('q2-fb');
+        if (v === 25) {
+          fb.textContent = '✓ Correct! 5 × 5 = 25 square units.';
+          fb.className = 'feedback correct';
+        } else {
+          fb.textContent = 'Remember: area = length × width.';
+          fb.className = 'feedback hint';
+        }
+      });
+    })();
+
+    // ========== Section 3: Square to Cube ==========
+    (function() {
+      const svg = document.getElementById('svg3');
+      const handle = document.getElementById('arrowHandle3');
+      const arrowLine = document.getElementById('arrowLine3');
+      const arrowHead = document.getElementById('arrowHead3');
+      const backFace = document.getElementById('backFace3');
+      const edges = ['edge3a', 'edge3b', 'edge3c', 'edge3d'].map(id => document.getElementById(id));
+      const depthLabel = document.getElementById('depthLabel3');
+
+      const frontVerts = [[100,100], [250,100], [250,250], [100,250]];
+      const centerX = 175, centerY = 175;
+      let depth = 0;
+
+      function toSvg(evt) {
+        const pt = new DOMPoint(evt.clientX, evt.clientY);
+        return pt.matrixTransform(svg.getScreenCTM().inverse());
+      }
+
+      function update(dx, dy) {
+        // Only allow up-left movement (negative x, negative y)
+        const offset = Math.max(0, Math.min(100, Math.max(-dx, -dy)));
+        depth = offset;
+
+        const backVerts = frontVerts.map(v => [v[0] + offset * 0.5, v[1] - offset]);
+
+        // Update back face
+        backFace.setAttribute('points', backVerts.map(v => v.join(',')).join(' '));
+        backFace.setAttribute('opacity', depth > 5 ? 1 : 0);
+
+        // Update edges
+        for (let i = 0; i < 4; i++) {
+          edges[i].setAttribute('x1', frontVerts[i][0]);
+          edges[i].setAttribute('y1', frontVerts[i][1]);
+          edges[i].setAttribute('x2', backVerts[i][0]);
+          edges[i].setAttribute('y2', backVerts[i][1]);
+          edges[i].setAttribute('opacity', depth > 5 ? 1 : 0);
+        }
+
+        // Update arrow
+        const handleX = centerX + offset * 0.25;
+        const handleY = centerY - offset * 0.5;
+        handle.setAttribute('cx', handleX);
+        handle.setAttribute('cy', handleY);
+        arrowLine.setAttribute('x2', handleX);
+        arrowLine.setAttribute('y2', handleY);
+
+        // Arrow head
+        const angle = Math.atan2(handleY - centerY, handleX - centerX);
+        const headLen = 10;
+        const hx = handleX, hy = handleY;
+        const p1x = hx - headLen * Math.cos(angle - 0.4);
+        const p1y = hy - headLen * Math.sin(angle - 0.4);
+        const p2x = hx - headLen * Math.cos(angle + 0.4);
+        const p2y = hy - headLen * Math.sin(angle + 0.4);
+        arrowHead.setAttribute('points', `${hx},${hy} ${p1x},${p1y} ${p2x},${p2y}`);
+
+        depthLabel.textContent = `Depth: ${Math.round(depth)}`;
+      }
+
+      handle.addEventListener('pointerdown', e => {
+        handle.setPointerCapture(e.pointerId);
+      });
+
+      handle.addEventListener('pointermove', e => {
+        if (!handle.hasPointerCapture(e.pointerId)) return;
+        const p = toSvg(e);
+        update(p.x - centerX, p.y - centerY);
+      });
+
+      // Question 3
+      document.getElementById('q3').addEventListener('change', e => {
+        const v = parseFloat(e.target.value);
+        const fb = document.getElementById('q3-fb');
+        if (v === 8) {
+          fb.textContent = '✓ Correct! 4 original + 4 copies = 8 vertices.';
+          fb.className = 'feedback correct';
+        } else {
+          fb.textContent = 'Think: original vertices + copied vertices = ?';
+          fb.className = 'feedback hint';
+        }
+      });
+    })();
+
+    // ========== Section 4: Cube to Tesseract ==========
+    (function() {
+      const slider = document.getElementById('sliceSlider4');
+      const readout = document.getElementById('sliceReadout4');
+      const slicePlane = document.getElementById('slicePlane4a');
+      const sliceCube = document.getElementById('sliceCube4b');
+      const sliceLabel4a = document.getElementById('sliceLabel4a');
+      const sliceLabel4b = document.getElementById('sliceLabel4b');
+
+      function update() {
+        const pos = parseInt(slider.value);
+        readout.textContent = `${pos}%`;
+
+        // Move slice plane in cube (vertical position)
+        const yOffset = (100 - pos) * 0.8;
+        const y1 = 60 + yOffset;
+        const y2 = 30 + yOffset;
+        slicePlane.setAttribute('points', `40,${y1} 120,${y1} 160,${y2} 80,${y2}`);
+
+        // Animate inner cube size for tesseract slice (grows and shrinks)
+        const t = pos / 100;
+        const scale = 0.5 + 0.5 * Math.sin(t * Math.PI);
+        const cx = 85, cy = 87;
+        const baseSize = 50;
+        const size = baseSize * (0.3 + 0.7 * scale);
+        const offset = (baseSize - size) / 2;
+
+        sliceCube.setAttribute('points',
+          `${60 + offset},${70 + offset} ${110 - offset},${70 + offset} ${110 - offset},${120 - offset} ${60 + offset},${120 - offset}`
+        );
+
+        // Update labels based on position
+        if (pos < 10 || pos > 90) {
+          sliceLabel4a.textContent = 'At edge: smaller square';
+          sliceLabel4b.textContent = 'At edge: smaller cube';
+        } else if (pos > 40 && pos < 60) {
+          sliceLabel4a.textContent = 'Center: full square';
+          sliceLabel4b.textContent = 'Center: full cube';
+        } else {
+          sliceLabel4a.textContent = 'Cross-section: Square';
+          sliceLabel4b.textContent = 'Cross-section: Cube';
+        }
+      }
+
+      slider.addEventListener('input', update);
+      update();
+
+      // Question 4
+      document.getElementById('q4').addEventListener('change', e => {
+        const v = parseFloat(e.target.value);
+        const fb = document.getElementById('q4-fb');
+        if (v === 16) {
+          fb.textContent = '✓ Correct! 8 × 2 = 16 vertices (the doubling pattern!).';
+          fb.className = 'feedback correct';
+        } else {
+          fb.textContent = 'Remember the pattern: each dimension doubles the vertices.';
+          fb.className = 'feedback hint';
+        }
+      });
+    })();
+
+    // ========== Section 5: Perpendicular Direction Guesser ==========
+    (function() {
+      const svg = document.getElementById('svg5');
+      const sweepBtn = document.getElementById('sweepBtn');
+      const resetBtn = document.getElementById('resetBtn5');
+      const resultText = document.getElementById('resultText');
+
+      const shapes = [
+        { cx: 75, cy: 100, idealAngle: 0 },    // Point: any horizontal direction
+        { cx: 187, cy: 100, idealAngle: -90 }, // Line: vertical (perpendicular to horizontal)
+        { cx: 300, cy: 100, idealAngle: -45 }, // Square: diagonal (into screen)
+        { cx: 422, cy: 102, idealAngle: -45 }  // Cube: diagonal (into 4D)
+      ];
+
+      const arrows = [];
+      const arrowHeads = [];
+      const handles = [];
+      const predictions = [null, null, null, null];
+
+      for (let i = 0; i < 4; i++) {
+        arrows[i] = document.getElementById(`arrow${i}`);
+        arrowHeads[i] = document.getElementById(`arrowHead${i}`);
+        handles[i] = document.getElementById(`arrowHandle${i}`);
+      }
+
+      function toSvg(evt) {
+        const pt = new DOMPoint(evt.clientX, evt.clientY);
+        return pt.matrixTransform(svg.getScreenCTM().inverse());
+      }
+
+      function updateArrow(i, endX, endY) {
+        const s = shapes[i];
+        const dx = endX - s.cx;
+        const dy = endY - s.cy;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+
+        if (dist < 10) {
+          arrows[i].setAttribute('opacity', 0);
+          arrowHeads[i].setAttribute('opacity', 0);
+          predictions[i] = null;
+        } else {
+          const clampedDist = Math.min(dist, 60);
+          const angle = Math.atan2(dy, dx);
+          const ex = s.cx + Math.cos(angle) * clampedDist;
+          const ey = s.cy + Math.sin(angle) * clampedDist;
+
+          arrows[i].setAttribute('x2', ex);
+          arrows[i].setAttribute('y2', ey);
+          arrows[i].setAttribute('opacity', 1);
+
+          // Arrow head
+          const headLen = 8;
+          const p1x = ex - headLen * Math.cos(angle - 0.4);
+          const p1y = ey - headLen * Math.sin(angle - 0.4);
+          const p2x = ex - headLen * Math.cos(angle + 0.4);
+          const p2y = ey - headLen * Math.sin(angle + 0.4);
+          arrowHeads[i].setAttribute('points', `${ex},${ey} ${p1x},${p1y} ${p2x},${p2y}`);
+          arrowHeads[i].setAttribute('opacity', 1);
+
+          predictions[i] = angle * 180 / Math.PI;
+        }
+
+        handles[i].setAttribute('cx', endX);
+        handles[i].setAttribute('cy', endY);
+
+        checkAllPredictions();
+      }
+
+      function checkAllPredictions() {
+        const allDrawn = predictions.every(p => p !== null);
+        sweepBtn.disabled = !allDrawn;
+        if (allDrawn) {
+          resultText.textContent = 'Ready!';
+        } else {
+          const count = predictions.filter(p => p !== null).length;
+          resultText.textContent = `${count}/4 drawn`;
+        }
+      }
+
+      for (let i = 0; i < 4; i++) {
+        const handle = handles[i];
+        handle.addEventListener('pointerdown', e => {
+          handle.setPointerCapture(e.pointerId);
+        });
+        handle.addEventListener('pointermove', e => {
+          if (!handle.hasPointerCapture(e.pointerId)) return;
+          const p = toSvg(e);
+          updateArrow(i, p.x, p.y);
+        });
+      }
+
+      sweepBtn.addEventListener('click', () => {
+        // Show feedback on predictions
+        let correct = 0;
+
+        for (let i = 0; i < 4; i++) {
+          const pred = predictions[i];
+          const ideal = shapes[i].idealAngle;
+
+          // For point, any direction works
+          if (i === 0) {
+            arrows[i].setAttribute('stroke', '#059669');
+            arrowHeads[i].setAttribute('fill', '#059669');
+            correct++;
+          } else {
+            // Check if prediction is roughly perpendicular
+            let diff = Math.abs(pred - ideal);
+            if (diff > 180) diff = 360 - diff;
+
+            // Also accept opposite direction
+            let diff2 = Math.abs(pred - (ideal + 180));
+            if (diff2 > 180) diff2 = 360 - diff2;
+
+            const minDiff = Math.min(diff, diff2);
+
+            if (minDiff < 45) {
+              arrows[i].setAttribute('stroke', '#059669');
+              arrowHeads[i].setAttribute('fill', '#059669');
+              correct++;
+            } else {
+              arrows[i].setAttribute('stroke', '#dc2626');
+              arrowHeads[i].setAttribute('fill', '#dc2626');
+            }
+          }
+        }
+
+        if (correct === 4) {
+          resultText.textContent = 'All correct!';
+          resultText.style.color = '#059669';
+        } else {
+          resultText.textContent = `${correct}/4 correct`;
+          resultText.style.color = '#b45309';
+        }
+
+        sweepBtn.disabled = true;
+      });
+
+      resetBtn.addEventListener('click', () => {
+        for (let i = 0; i < 4; i++) {
+          arrows[i].setAttribute('opacity', 0);
+          arrows[i].setAttribute('stroke', '#0d9488');
+          arrowHeads[i].setAttribute('opacity', 0);
+          arrowHeads[i].setAttribute('fill', '#0d9488');
+          handles[i].setAttribute('cx', shapes[i].cx);
+          handles[i].setAttribute('cy', shapes[i].cy);
+          predictions[i] = null;
+        }
+        sweepBtn.disabled = true;
+        resultText.textContent = 'Draw arrows!';
+        resultText.style.color = '#0d9488';
+      });
+    })();
+  </script>
+</body>
+</html>
